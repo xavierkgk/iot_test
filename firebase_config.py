@@ -17,7 +17,6 @@ def get_firestore_credentials():
         ):
             firestore_json = st.secrets["firebase"]["FIRESTORE_JSON"]
             source = "Streamlit secrets"
-            print("Retrieved JSON from Streamlit secrets:", firestore_json)  # Debugging line
     except Exception as e:
         # st.secrets is not configured or not available
         pass
@@ -26,7 +25,6 @@ def get_firestore_credentials():
     if firestore_json is None:
         firestore_json = os.environ.get("FIRESTORE_JSON")
         source = "environment variable"
-        print("Retrieved JSON from environment variable:", firestore_json)  # Debugging line
 
     if not firestore_json:
         raise ValueError(
