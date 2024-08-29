@@ -1,3 +1,9 @@
+import json
+import os
+import firebase_admin
+from firebase_admin import credentials, firestore
+import streamlit as st
+
 def get_firestore_credentials():
     """Retrieve Firestore credentials from Streamlit secrets or environment variables."""
     firestore_json = None
@@ -34,3 +40,24 @@ def get_firestore_credentials():
         raise ValueError(f"Invalid FIRESTORE_JSON format from {source}") from e
 
     return firestore_credentials
+
+def initialize_firestore():
+    """Initialize Firestore client."""
+    try:
+        firestore_credentials = get_firestore_credentials()
+
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(firestore_credentials)
+            firebase_admin.initialize_app(cred)
+        db = firestore.client()
+        return db
+
+    except Exception as e:
+        raise ValueError(f"Error initializing Firestore: {e}") from e
+
+# Initialize Firestore client
+db = initialize_firestore()
+
+def get_database():
+    """Get Firestore database client."""
+    return db
