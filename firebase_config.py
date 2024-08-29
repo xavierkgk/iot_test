@@ -6,7 +6,7 @@ import streamlit as st
 
 def get_firestore_credentials():
     """Retrieve Firestore credentials based on the environment."""
-    if "STREAMLIT_ENV" in os.environ:
+    if "STREAMLIT_ENV" in os.environ or "firebase" in st.secrets:
         # Running in Streamlit Cloud
         firestore_json = st.secrets["firebase"]["FIRESTORE_JSON"]
     else:
