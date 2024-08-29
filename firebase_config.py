@@ -5,34 +5,57 @@ from firebase_admin import credentials, firestore
 import streamlit as st
 
 def get_firestore_credentials():
-    """Retrieve Firestore credentials based on the environment."""
-    if "STREAMLIT_ENV" in os.environ or "firebase" in st.secrets:
-        # Running in Streamlit Cloud
-        firestore_json = st.secrets["firebase"]["FIRESTORE_JSON"]
-    else:
-        # Running in local environment (e.g., Codespaces)
+    """Retrieve Firestore credentials from Streamlit secrets or environment variables."""
+    firestore_json = None
+
+    # Attempt to retrieve from Streamlit secrets
+    try:
+        if (
+            hasattr(st, "secrets") and
+            "firebase" in st.secrets and
+            "FIRESTORE_JSON" in st.secrets["firebase"]
+        ):
+            firestore_json = st.secrets["firebase"]["FIRESTORE_JSON"]
+            source = "Streamlit secrets"
+    except Exception as e:
+        # st.secrets is not configured or not available
+        pass
+
+    # Fallback to environment variable
+    if firestore_json is None:
         firestore_json = os.environ.get("FIRESTORE_JSON")
+        source = "environment variable"
 
     if not firestore_json:
-        raise ValueError("Missing FIRESTORE_JSON environment variable")
+        raise ValueError(
+            "Firestore credentials not found. Please set them in Streamlit secrets or as an environment variable."
+        )
 
+    # Parse the JSON string into a dictionary
     try:
-        return json.loads(firestore_json)
+        firestore_credentials = json.loads(firestore_json)
     except json.JSONDecodeError as e:
-        raise ValueError("Invalid FIRESTORE_JSON format") from e
+        raise ValueError(f"Invalid FIRESTORE_JSON format from {source}") from e
 
-# Retrieve Firestore JSON secret
-firestore_credentials = get_firestore_credentials()
+    return firestore_credentials
 
-# Initialize Firestore credentials and client
-try:
-    if not firebase_admin._apps:
-        cred = credentials.Certificate(firestore_credentials)
-        firebase_admin.initialize_app(cred)
-    db = firestore.client()
-except Exception as e:
-    raise ValueError("Error initializing Firestore") from e
+def initialize_firestore():
+    """Initialize Firestore client."""
+    try:
+        firestore_credentials = get_firestore_credentials()
 
-# Define a function to return the database client
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(firestore_credentials)
+            firebase_admin.initialize_app(cred)
+        db = firestore.client()
+        return db
+
+    except Exception as e:
+        raise ValueError(f"Error initializing Firestore: {e}") from e
+
+# Initialize Firestore client
+db = initialize_firestore()
+
 def get_database():
+    """Get Firestore database client."""
     return db
