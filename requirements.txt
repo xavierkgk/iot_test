@@ -1,1 +1,5 @@
-pip install streamlit firebase-admin pandas matplotlib
+streamlit
+firebase-admin
+pandas
+matplotlib
+numpy 
