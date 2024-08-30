@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter, AutoDateLocator
 from io import BytesIO
-from firebase_config import get_database
+from firebase_config import get_database  # Ensure this import matches the function definition
 
 def fetch_data(collection_name):
     """Fetches data from a Firestore collection.
