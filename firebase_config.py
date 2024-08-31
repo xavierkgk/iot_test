@@ -4,7 +4,7 @@ from google.oauth2 import service_account
 from google.cloud import firestore
 
 def initialize_firestore():
-    # Load the JSON credentials from Streamlit secrets
+    # Load Firestore JSON credentials from Streamlit secrets
     firestore_json = st.secrets["firebase"]["credentials"]
     key_dict = json.loads(firestore_json)
     
@@ -16,3 +16,10 @@ def initialize_firestore():
 def get_database():
     """Get Firestore database client."""
     return initialize_firestore()
+
+def get_user_data(username):
+    """Fetch user data from Firestore based on username."""
+    db = get_database()
+    users_ref = db.collection('users')  # Ensure you have a 'users' collection
+    user_doc = users_ref.document(username).get()
+    return user_doc.to_dict() if user_doc.exists else None

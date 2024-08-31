@@ -7,3 +7,4 @@ pandas
 matplotlib
 numpy
 fpdf
+firebase_auth 

@@ -1,178 +1,165 @@
 import streamlit as st
 import pandas as pd
-import altair as alt
-from io import BytesIO
+from datetime import datetime, timezone
 from firebase_config import get_database
-from fpdf import FPDF  # Import the FPDF library
 
-def fetch_data(collection_name):
-    """Fetches data from a Firestore collection.
+def check_login():
+    """Check if the user is logged in."""
+    if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
+        st.session_state.page = 'login'
+        st.rerun()  # Refresh the app to apply the session state change
 
-    Args:
-        collection_name (str): The name of the Firestore collection.
+def show_login_page():
+    """Render the login page."""
+    st.title("Login Page")
+    st.write("Please log in to access the dashboard.")
+    # Implement your login form here
+    # For example:
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    
+    if st.button("Login"):
+        # Replace with your authentication logic
+        if username == "admin" and password == "password":
+            st.session_state['logged_in'] = True
+            st.session_state.page = 'dashboard'
+            st.rerun()
+        else:
+            st.error("Invalid credentials. Please try again.")
 
-    Returns:
-        pandas.DataFrame: A DataFrame containing the fetched data.
-    """
+def fetch_latest_readings(collection_name):
+    """Fetch the latest reading for each sensor from Firestore."""
     db = get_database()
-    docs = db.collection(collection_name).get()
-    data = [doc.to_dict() for doc in docs]
+    docs = db.collection(collection_name).order_by('timestamp', direction='DESCENDING').get()
+    
+    data = []
+    seen_sensors = set()
+
+    for doc in docs:
+        record = doc.to_dict()
+        sensor_id = record.get('sensorID')
+        if sensor_id not in seen_sensors:
+            data.append(record)
+            seen_sensors.add(sensor_id)
+
     return pd.DataFrame(data) if data else pd.DataFrame()
 
-def to_csv(df):
-    """Convert DataFrame to CSV format."""
-    return df.to_csv(index=False).encode('utf-8')
+def show_dashboard():
+    """Render the main dashboard."""
+    st.title("IoT Dashboard Overview")
 
-def to_pdf(df):
-    """Convert DataFrame to PDF format."""
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
+    collection_name = "iot_gateway_reading"
+    latest_df = fetch_latest_readings(collection_name)
 
-    # Add title
-    pdf.cell(200, 10, txt="Filtered Data", ln=True, align='C')
+    if not latest_df.empty:
+        latest_df['timestamp'] = pd.to_datetime(latest_df['timestamp'], utc=True)
+        latest_df['timestamp'] = latest_df['timestamp'].dt.tz_convert('Asia/Singapore')
+        latest_df['formatted_timestamp'] = latest_df['timestamp'].dt.strftime('%d/%m/%Y %H:%M')
+        latest_df = latest_df.sort_values(by='sensorID')
 
-    # Add header
-    header = df.columns.tolist()
-    for col in header:
-        pdf.cell(40, 10, txt=col, border=1)
-    pdf.ln()
+        st.header("Latest Sensor/Regulator Readings")
 
-    # Add data rows
-    for index, row in df.iterrows():
-        for value in row:
-            pdf.cell(40, 10, txt=str(value), border=1)
-        pdf.ln()
+        for sensor_id, group in latest_df.groupby('sensorID'):
+            for _, row in group.iterrows():
+                time_diff = datetime.now(timezone.utc) - row['timestamp']
+                is_outdated = time_diff.total_seconds() > 5 * 60
+                container_bg_color = "#f1948a" if is_outdated else "#85c1e9"
+                flash_class = "flash-red" if is_outdated else ""
 
-    return pdf.output(dest='S').encode('latin1')
+                st.markdown(
+                    f"""
+                    <div class="sensor-container {flash_class}" style="background-color: {container_bg_color};">
+                        <div class="sensor-info">
+                            <h3>{sensor_id}</h3>
+                            <p><strong>Timestamp:</strong> {row["formatted_timestamp"]}</p>
+                        </div>
+                        <div class="sensor-reading">
+                            <div class="reading-box">
+                                <p><strong>Pressure:</strong> {row["pressure"]}</p>
+                            </div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
-# Streamlit app components
-st.title("Streamlit IoT Dashboard Test")
-
-collection_name = "iot_gateway_reading"
-df = fetch_data(collection_name)
-
-# Ensure the timestamp column is in datetime format with timezone info
-df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
-
-# Convert the timestamp to GMT+8 and format it
-df['timestamp'] = df['timestamp'].dt.tz_convert('Asia/Singapore')
-df['formatted_timestamp'] = df['timestamp'].dt.strftime('%d/%m/%Y %H:%M')
-
-# Create a container for the main page content
-with st.container():
-    # Add date range filter
-    st.header("Filter by Date Range")
-    start_date = st.date_input("Start date", df['timestamp'].min().date())
-    end_date = st.date_input("End date", df['timestamp'].max().date())
-
-    # Convert start_date and end_date to timezone-aware pd.Timestamp for comparison
-    start_date = pd.Timestamp(start_date).tz_localize('Asia/Singapore')  # Make timezone-aware
-    end_date = pd.Timestamp(end_date).tz_localize('Asia/Singapore') + pd.Timedelta(days=1)  # Make timezone-aware and add one day
-
-    # Filter the DataFrame based on the selected date range
-    filtered_df = df[(df['timestamp'] >= start_date) & (df['timestamp'] < end_date)]
-
-    # Add sensor ID dropdown filter with "Select All" option
-    st.header("Filter by Sensor ID")
-    sensor_ids = df['sensorID'].unique()
-    sensor_ids = sorted(sensor_ids)  # Sort sensor IDs for better user experience
-    sensor_ids_with_all = ["All"] + list(sensor_ids)  # Add "All" option
-    selected_sensor = st.selectbox("Select Sensor ID", options=sensor_ids_with_all)
-
-    # Filter the DataFrame based on the selected sensor ID
-    if selected_sensor != "All":
-        filtered_df = filtered_df[filtered_df['sensorID'] == selected_sensor]
-
-    # Check if filtered DataFrame is empty
-    if filtered_df.empty:
-        st.write("No data available for the selected filters.")
-    else:
-        # Show basic statistics in colorful box widgets
-        st.header("Basic Statistics")
-        
-        # Compute statistics
-        total_records = filtered_df.shape[0]
-        mean_pressure = filtered_df['pressure'].mean()
-        median_pressure = filtered_df['pressure'].median()
-        std_pressure = filtered_df['pressure'].std()
-
-        # Create colorful boxes for statistics using HTML/CSS
         st.markdown(
-            f"""
+            """
             <style>
-            .metric-container {{
-                display: flex;
-                justify-content: space-between;
+            @keyframes flash {
+                0% { background-color: #f1948a; }
+                50% { background-color: #f5b7b1; }
+                100% { background-color: #f1948a; }
+            }
+            .flash-red {
+                animation: flash 1s infinite;
+            }
+            .sensor-container {
+                border: 1px solid #ddd;
+                border-radius: 10px;
+                padding: 15px;
                 margin-bottom: 20px;
-            }}
-            .metric-box {{
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: space-between;
+                align-items: center;
                 background-color: #f5f5f5;
-                border-radius: 8px;
-                padding: 20px;
                 box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-                width: 23%;
-            }}
-            .metric-box h3 {{
-                margin: 0;
-                font-size: 16px;
-                color: #333;
-            }}
-            .metric-box p {{
-                margin: 5px 0 0;
-                font-size: 24px;
-                color: #007bff;
-                font-weight: bold;
-            }}
+            }
+            .sensor-info {
+                flex: 1;
+                min-width: 180px;
+            }
+            .sensor-reading {
+                flex: 2;
+                padding-left: 20px;
+                min-width: 220px;
+            }
+            .reading-box {
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                padding: 10px;
+                margin: 5px 0;
+                background-color: #abebc6;
+            }
+            @media (max-width: 768px) {
+                .sensor-container {
+                    flex-direction: column;
+                    padding: 15px;
+                }
+                .sensor-info, .sensor-reading {
+                    flex: unset;
+                    min-width: 100%;
+                    padding-left: 0;
+                }
+                .reading-box {
+                    padding: 8px;
+                    margin: 5px 0;
+                }
+                h3 {
+                    font-size: 1.2rem;
+                }
+                p {
+                    font-size: 0.9rem;
+                }
+            }
             </style>
-            <div class="metric-container">
-                <div class="metric-box">
-                    <h3>Total Records</h3>
-                    <p>{total_records}</p>
-                </div>
-                <div class="metric-box">
-                    <h3>Mean Pressure</h3>
-                    <p>{mean_pressure:.2f}</p>
-                </div>
-                <div class="metric-box">
-                    <h3>Median Pressure</h3>
-                    <p>{median_pressure:.2f}</p>
-                </div>
-                <div class="metric-box">
-                    <h3>Standard Deviation</h3>
-                    <p>{std_pressure:.2f}</p>
-                </div>
-            </div>
             """,
             unsafe_allow_html=True
         )
+    else:
+        st.write("No data available.")
 
-        # Create an Altair chart for better visualization
-        st.header(f"Pressure Readings Over Time - {'All Sensors' if selected_sensor == 'All' else selected_sensor}")
-        
-        # Altair line chart for multiple sensors
-        chart = alt.Chart(filtered_df).mark_line(point=True).encode(
-            x=alt.X('timestamp:T', title='Timestamp', axis=alt.Axis(labelAngle=-45)),
-            y=alt.Y('pressure:Q', title='Pressure'),
-            color=alt.Color('sensorID:N', title='Sensor ID'),
-            tooltip=['formatted_timestamp', 'sensorID', 'pressure']
-        ).interactive().properties(
-            width=800,
-            height=400,
-            title='Pressure Readings Over Time by Sensor'
-        )
-        
-        st.altair_chart(chart)
+def main():
+    """Main function to handle the application flow."""
+    if 'page' not in st.session_state:
+        st.session_state.page = 'dashboard'
 
-        # Display the filtered data with the formatted timestamp
-        st.dataframe(filtered_df[['formatted_timestamp', 'sensorID', 'pressure']])
+    if st.session_state.page == 'login':
+        show_login_page()
+    else:
+        check_login()
+        show_dashboard()
 
-        # Export Data
-        st.header("Export Data")
-        if st.button("Export CSV"):
-            csv = to_csv(filtered_df[['formatted_timestamp', 'sensorID', 'pressure']])
-            st.download_button(label="Download CSV", data=csv, file_name='filtered_data.csv', mime='text/csv')
-
-        if st.button("Export PDF"):
-            pdf = to_pdf(filtered_df[['formatted_timestamp', 'sensorID', 'pressure']])
-            st.download_button(label="Download PDF", data=pdf, file_name='filtered_data.pdf', mime='application/pdf')
+if __name__ == "__main__":
+    main()
