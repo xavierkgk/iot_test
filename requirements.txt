@@ -1,5 +1,9 @@
 streamlit
+streamlit-authenticator
+bcrypt
+PyJWT
 firebase-admin
 pandas
 matplotlib
-numpy 
+numpy
+fpdf
