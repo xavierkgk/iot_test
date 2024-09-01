@@ -51,7 +51,48 @@ def get_users():
         users.append(user_data)
     return users
 
+def is_logged_in():
+    """Check if a user is logged in."""
+    return 'logged_in' in st.session_state and st.session_state.logged_in
+
+def get_current_user():
+    """Get the current logged-in user."""
+    return st.session_state.get('current_user', {})
+
+def login(username, password):
+    """Simulate a login function."""
+    user_ref = db.collection('users').document(username)
+    user = user_ref.get()
+    if user.exists:
+        user_data = user.to_dict()
+        if check_password(password, user_data['password']):
+            st.session_state.logged_in = True
+            st.session_state.current_user = user_data
+            return True
+    return False
+
 def main():
+    if not is_logged_in():
+        st.title("Login")
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submit_button = st.form_submit_button("Login")
+            if submit_button:
+                if login(username, password):
+                    st.success("Logged in successfully!")
+                    st.rerun()  # Refresh the UI
+                else:
+                    st.error("Invalid username or password")
+        return
+
+    current_user = get_current_user()
+
+    # Check if the current user is an admin
+    if not current_user.get('is_admin', False):
+        st.warning("You do not have permission to view this page.")
+        return
+
     st.title("User Manager")
 
     # Add User button as a popover
@@ -67,7 +108,7 @@ def main():
             if submit_button:
                 add_user(username, name, email, password, is_admin)
                 st.success(f"User {username} added successfully!")
-                st.rerun()  # Rerun the script to refresh the UI
+                st.rerun()  # Refresh the UI
 
     users = get_users()
     if users:
@@ -96,7 +137,7 @@ def main():
                         if submit_button:
                             update_user(user['username'], new_name, new_email, new_password, new_is_admin)
                             st.success(f"User {user['username']} updated successfully!")
-                            st.rerun()  # Rerun the script to refresh the UI
+                            st.rerun()  # Refresh the UI
 
             with cols[5]:
                 # Delete button as a popover with adjusted content
@@ -107,7 +148,7 @@ def main():
                     if confirm_delete and st.button("Delete User", key=f"delete_{user['username']}"):
                         remove_user(user['username'])
                         st.success(f"User {user['username']} removed successfully!")
-                        st.rerun()  # Rerun the script to refresh the UI
+                        st.rerun()  # Refresh the UI
 
 if __name__ == "__main__":
     main()

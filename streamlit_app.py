@@ -2,30 +2,26 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone
 from firebase_config import get_database
-
-def check_login():
-    """Check if the user is logged in."""
-    if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
-        st.session_state.page = 'login'
-        st.rerun()  # Refresh the app to apply the session state change
+from login import login as authenticate_user, is_logged_in
 
 def show_login_page():
     """Render the login page."""
     st.title("Login Page")
     st.write("Please log in to access the dashboard.")
-    # Implement your login form here
-    # For example:
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
     
-    if st.button("Login"):
-        # Replace with your authentication logic
-        if username == "admin" and password == "password":
-            st.session_state['logged_in'] = True
-            st.session_state.page = 'dashboard'
-            st.rerun()
-        else:
-            st.error("Invalid credentials. Please try again.")
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        login_button = st.form_submit_button("Login")
+
+        if login_button:
+            if authenticate_user(username, password):
+                st.session_state['logged_in'] = True
+                st.session_state['username'] = username
+                st.session_state.page = 'dashboard'
+                st.rerun()  # Refresh the app after logging in
+            else:
+                st.error("Invalid credentials. Please try again.")
 
 def fetch_latest_readings(collection_name):
     """Fetch the latest reading for each sensor from Firestore."""
@@ -153,13 +149,18 @@ def show_dashboard():
 def main():
     """Main function to handle the application flow."""
     if 'page' not in st.session_state:
-        st.session_state.page = 'dashboard'
+        st.session_state.page = 'login'
+
+    if not is_logged_in() and st.session_state.page != 'login':
+        st.session_state.page = 'login'
+        st.experimental_rerun()  # Redirect to login page
 
     if st.session_state.page == 'login':
         show_login_page()
-    else:
-        check_login()
+    elif st.session_state.page == 'dashboard':
         show_dashboard()
+    else:
+        st.write("Page not found.")
 
 if __name__ == "__main__":
     main()
